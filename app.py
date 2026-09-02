@@ -63,7 +63,6 @@ chart_granularity = chart_timeframes[selected_tf]
 refresh_rate = st.sidebar.slider("Refresh Interval (s)", 2, 30, 20)
 
 st.sidebar.markdown("---")
-# NEW SETTING: Controls how tight the zoom is on the chart
 default_zoom = st.sidebar.slider("Default Zoom Window (Candles)", min_value=30, max_value=500, value=100)
 show_zones = st.sidebar.checkbox("Show Confluence Zones", value=True)
 show_sl = st.sidebar.checkbox("Show Stop Loss Lines", value=True)
@@ -95,23 +94,26 @@ def live_mobile_view():
     df_pivots['prev_close'] = df_pivots['close'].shift(1)
     df_pivots['range'] = df_pivots['prev_high'] - df_pivots['prev_low']
 
+    # 7-Layer Fibonacci Pivots synchronized to the ATEAMFX sequence
     df_pivots['P'] = (df_pivots['prev_high'] + df_pivots['prev_low'] + df_pivots['prev_close']) / 3
+    
     df_pivots['R1'] = df_pivots['P'] + (0.382 * df_pivots['range'])
     df_pivots['R2'] = df_pivots['P'] + (0.618 * df_pivots['range'])
-    df_pivots['R3'] = df_pivots['P'] + (1.000 * df_pivots['range'])
-    df_pivots['R4'] = df_pivots['P'] + (1.382 * df_pivots['range'])
-    df_pivots['R5'] = df_pivots['P'] + (1.618 * df_pivots['range'])
-    df_pivots['R6'] = df_pivots['P'] + (2.000 * df_pivots['range'])
+    df_pivots['R3'] = df_pivots['P'] + (0.786 * df_pivots['range'])
+    df_pivots['R4'] = df_pivots['P'] + (1.000 * df_pivots['range'])
+    df_pivots['R5'] = df_pivots['P'] + (1.272 * df_pivots['range'])
+    df_pivots['R6'] = df_pivots['P'] + (1.618 * df_pivots['range'])
     df_pivots['R7'] = df_pivots['P'] + (2.618 * df_pivots['range'])
     
     df_pivots['S1'] = df_pivots['P'] - (0.382 * df_pivots['range'])
     df_pivots['S2'] = df_pivots['P'] - (0.618 * df_pivots['range'])
-    df_pivots['S3'] = df_pivots['P'] - (1.000 * df_pivots['range'])
-    df_pivots['S4'] = df_pivots['P'] - (1.382 * df_pivots['range'])
-    df_pivots['S5'] = df_pivots['P'] - (1.618 * df_pivots['range'])
-    df_pivots['S6'] = df_pivots['P'] - (2.000 * df_pivots['range'])
+    df_pivots['S3'] = df_pivots['P'] - (0.786 * df_pivots['range'])
+    df_pivots['S4'] = df_pivots['P'] - (1.000 * df_pivots['range'])
+    df_pivots['S5'] = df_pivots['P'] - (1.272 * df_pivots['range'])
+    df_pivots['S6'] = df_pivots['P'] - (1.618 * df_pivots['range'])
     df_pivots['S7'] = df_pivots['P'] - (2.618 * df_pivots['range'])
     
+    # Confluence Math
     df_pivots['avg_range'] = df_pivots['range'].rolling(window=14).mean()
     df_pivots['threshold'] = df_pivots['avg_range'] * 0.15 
     
@@ -137,8 +139,8 @@ def live_mobile_view():
     m_col2.metric(f"Current Pivot (P)", f"{current_pivots['P']:,.2f}")
     
     m_col3, m_col4 = st.columns(2)
-    m_col3.metric("Sell Zone", res_status)
-    m_col4.metric("Buy Zone", sup_status)
+    m_col3.metric("Sell Zone (R1)", res_status)
+    m_col4.metric("Buy Zone (S1)", sup_status)
 
     # 3. Build Plotly Chart
     fig = go.Figure()
@@ -154,6 +156,7 @@ def live_mobile_view():
         decreasing_line_color='#ef5350'
     ))
 
+    # Color Map exactly matching your MT5 settings
     fib_colors = {
         'R7': 'Maroon', 'S7': 'Maroon',
         'R6': 'DarkGray', 'S6': 'DarkGray',
@@ -165,7 +168,6 @@ def live_mobile_view():
         'P': 'Yellow'
     }
 
-    # Plot Pivots and Zones
     for _, row in df_pivots.iterrows():
         x_start = row['datetime']
         x_end = row['datetime'] + pd.Timedelta(seconds=pivot_granularity)
@@ -217,9 +219,8 @@ def live_mobile_view():
                     sl_price = sup_low - (row['avg_range'] * 0.10)
                     fig.add_trace(go.Scatter(x=[x_start, x_end], y=[sl_price, sl_price], mode='lines', line=dict(color='crimson', width=1, dash='dash'), hoverinfo='skip', showlegend=False))
 
-    # Calculate Default Zoom Boundaries based on user slider
     zoom_start = df_intra['datetime'].iloc[-min(default_zoom, len(df_intra))]
-    zoom_end = df_intra['datetime'].iloc[-1] + pd.Timedelta(seconds=chart_granularity * 3) # padding on right
+    zoom_end = df_intra['datetime'].iloc[-1] + pd.Timedelta(seconds=chart_granularity * 3) 
 
     fig.update_layout(
         uirevision="constant",
@@ -234,8 +235,6 @@ def live_mobile_view():
         template="plotly_dark",
         margin=dict(l=5, r=45, b=10, t=55),
         yaxis=dict(side='right', tickfont=dict(size=10)),
-        
-        # Lock the X-axis strictly to the slider's default range setting
         xaxis=dict(
             range=[zoom_start, zoom_end],
             tickfont=dict(size=10)
