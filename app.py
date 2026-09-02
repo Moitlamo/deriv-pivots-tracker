@@ -63,7 +63,11 @@ chart_granularity = chart_timeframes[selected_tf]
 refresh_rate = st.sidebar.slider("Refresh Interval (s)", 2, 30, 20)
 
 st.sidebar.markdown("---")
-default_zoom = st.sidebar.slider("Default Zoom Window (Candles)", min_value=30, max_value=500, value=100)
+st.sidebar.markdown("**View Controls**")
+default_zoom = st.sidebar.slider("Horizontal Zoom (Candles)", min_value=30, max_value=500, value=100)
+vertical_zoom = st.sidebar.slider("Vertical Zoom (Padding %)", min_value=5, max_value=150, value=30)
+
+st.sidebar.markdown("---")
 show_zones = st.sidebar.checkbox("Show Confluence Zones", value=True)
 show_sl = st.sidebar.checkbox("Show Stop Loss Lines", value=True)
 
@@ -113,7 +117,6 @@ def live_mobile_view():
     df_pivots['S6'] = df_pivots['P'] - (1.618 * df_pivots['range'])
     df_pivots['S7'] = df_pivots['P'] - (2.618 * df_pivots['range'])
     
-    # Confluence Math
     df_pivots['avg_range'] = df_pivots['range'].rolling(window=14).mean()
     df_pivots['threshold'] = df_pivots['avg_range'] * 0.15 
     
@@ -156,7 +159,6 @@ def live_mobile_view():
         decreasing_line_color='#ef5350'
     ))
 
-    # Color Map exactly matching your MT5 settings
     fib_colors = {
         'R7': 'Maroon', 'S7': 'Maroon',
         'R6': 'DarkGray', 'S6': 'DarkGray',
@@ -219,11 +221,26 @@ def live_mobile_view():
                     sl_price = sup_low - (row['avg_range'] * 0.10)
                     fig.add_trace(go.Scatter(x=[x_start, x_end], y=[sl_price, sl_price], mode='lines', line=dict(color='crimson', width=1, dash='dash'), hoverinfo='skip', showlegend=False))
 
+    # --- Viewport Calculations ---
+    # 1. Horizontal Boundary
     zoom_start = df_intra['datetime'].iloc[-min(default_zoom, len(df_intra))]
     zoom_end = df_intra['datetime'].iloc[-1] + pd.Timedelta(seconds=chart_granularity * 3) 
 
+    # 2. Vertical Boundary (Prevents auto-scaling to extreme Fib lines)
+    visible_candles = df_intra.iloc[-min(default_zoom, len(df_intra)):]
+    y_max = visible_candles['high'].max()
+    y_min = visible_candles['low'].min()
+    price_range = y_max - y_min
+    if price_range == 0: price_range = 10 
+    
+    y_zoom_max = y_max + (price_range * (vertical_zoom / 100.0))
+    y_zoom_min = y_min - (price_range * (vertical_zoom / 100.0))
+
+    # Dynamic UI Revision string ensures manual drags aren't overridden unless settings change
+    view_state_id = f"{symbol}_{default_zoom}_{vertical_zoom}"
+
     fig.update_layout(
-        uirevision="constant",
+        uirevision=view_state_id,
         title=dict(
             text=f"<b>{selected_asset_name}</b><br><span style='font-size:12px;'>Pivots: {selected_pivot_tf} | Chart: {selected_tf}</span>",
             font=dict(size=16)
@@ -234,11 +251,11 @@ def live_mobile_view():
         height=500,
         template="plotly_dark",
         margin=dict(l=5, r=45, b=10, t=55),
-        yaxis=dict(side='right', tickfont=dict(size=10)),
-        xaxis=dict(
-            range=[zoom_start, zoom_end],
-            tickfont=dict(size=10)
-        ),
+        
+        # Explicit Range Locks
+        xaxis=dict(range=[zoom_start, zoom_end], tickfont=dict(size=10)),
+        yaxis=dict(side='right', tickfont=dict(size=10), range=[y_zoom_min, y_zoom_max], fixedrange=False),
+        
         dragmode='zoom'
     )
 
