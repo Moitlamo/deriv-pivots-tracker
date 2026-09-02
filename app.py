@@ -52,12 +52,10 @@ assets = {
 selected_asset_name = st.sidebar.selectbox("Volatility Index", list(assets.keys()), index=4)
 symbol = assets[selected_asset_name]
 
-# Higher Timeframe for Pivot Calculations
 pivot_timeframes = {"1 Hour": 3600, "4 Hours": 14400, "8 Hours": 28800, "1 Day": 86400}
 selected_pivot_tf = st.sidebar.selectbox("Pivot Timeframe", list(pivot_timeframes.keys()), index=3)
 pivot_granularity = pivot_timeframes[selected_pivot_tf]
 
-# Lower Timeframe for Chart Candles
 chart_timeframes = {"1 Minute": 60, "5 Minutes": 300, "15 Minutes": 900, "30 Minutes": 1800, "1 Hour": 3600}
 selected_tf = st.sidebar.selectbox("Chart Timeframe", list(chart_timeframes.keys()), index=2)
 chart_granularity = chart_timeframes[selected_tf]
@@ -68,11 +66,8 @@ st.sidebar.markdown("---")
 show_zones = st.sidebar.checkbox("Show Confluence Zones", value=True)
 show_sl = st.sidebar.checkbox("Show Stop Loss Lines", value=True)
 
-# Calculate optimal fetch counts
 candles_per_day = 86400 // chart_granularity
 intraday_count = min(candles_per_day * 3 + 20, 3000)
-
-# Fetch extra pivot data to compute the 14-period rolling average required for confluence
 pivot_count = max(30, (86400 * 3) // pivot_granularity + 15)
 
 # --- Live Fragment Container ---
@@ -98,28 +93,33 @@ def live_mobile_view():
     df_pivots['prev_close'] = df_pivots['close'].shift(1)
     df_pivots['range'] = df_pivots['prev_high'] - df_pivots['prev_low']
 
-    # Standard Fib Pivots
+    # 7-Layer Fibonacci Pivots
     df_pivots['P'] = (df_pivots['prev_high'] + df_pivots['prev_low'] + df_pivots['prev_close']) / 3
+    
     df_pivots['R1'] = df_pivots['P'] + (0.382 * df_pivots['range'])
     df_pivots['R2'] = df_pivots['P'] + (0.618 * df_pivots['range'])
     df_pivots['R3'] = df_pivots['P'] + (1.000 * df_pivots['range'])
+    df_pivots['R4'] = df_pivots['P'] + (1.382 * df_pivots['range'])
+    df_pivots['R5'] = df_pivots['P'] + (1.618 * df_pivots['range'])
+    df_pivots['R6'] = df_pivots['P'] + (2.000 * df_pivots['range'])
+    df_pivots['R7'] = df_pivots['P'] + (2.618 * df_pivots['range'])
+    
     df_pivots['S1'] = df_pivots['P'] - (0.382 * df_pivots['range'])
     df_pivots['S2'] = df_pivots['P'] - (0.618 * df_pivots['range'])
     df_pivots['S3'] = df_pivots['P'] - (1.000 * df_pivots['range'])
+    df_pivots['S4'] = df_pivots['P'] - (1.382 * df_pivots['range'])
+    df_pivots['S5'] = df_pivots['P'] - (1.618 * df_pivots['range'])
+    df_pivots['S6'] = df_pivots['P'] - (2.000 * df_pivots['range'])
+    df_pivots['S7'] = df_pivots['P'] - (2.618 * df_pivots['range'])
     
-    # --- Confluence Math ---
-    # 14 Period Average Range
+    # Confluence Math
     df_pivots['avg_range'] = df_pivots['range'].rolling(window=14).mean()
-    # 15% Volatility Threshold
     df_pivots['threshold'] = df_pivots['avg_range'] * 0.15 
     
-    # Flag Zones
     df_pivots['res_confluence'] = abs(df_pivots['R1'] - df_pivots['prev_high']) <= df_pivots['threshold']
     df_pivots['sup_confluence'] = abs(df_pivots['S1'] - df_pivots['prev_low']) <= df_pivots['threshold']
     
-    # Sweep buffer (Using 5% of average range instead of arbitrary MT5 points)
     df_pivots['sweep_buffer'] = df_pivots['avg_range'] * 0.05
-
     df_pivots.dropna(inplace=True)
 
     # 2. Process Intraday Chart Data
@@ -133,7 +133,6 @@ def live_mobile_view():
     res_status = "🔴 ACTIVE" if current_pivots['res_confluence'] else "Inactive"
     sup_status = "🟢 ACTIVE" if current_pivots['sup_confluence'] else "Inactive"
 
-    # Metrics Grid
     m_col1, m_col2 = st.columns(2)
     m_col1.metric("Live Price", f"{latest_price:,.2f}")
     m_col2.metric(f"Current Pivot (P)", f"{current_pivots['P']:,.2f}")
@@ -156,7 +155,17 @@ def live_mobile_view():
         decreasing_line_color='#ef5350'
     ))
 
-    fib_colors = {'R3': '#ff1744', 'R2': '#ff5252', 'R1': '#ff7961', 'P': '#ffd600', 'S1': '#81c784', 'S2': '#4caf50', 'S3': '#2e7d32'}
+    # Updated MT5 ATEAMFX Color Map
+    fib_colors = {
+        'R7': 'Maroon', 'S7': 'Maroon',
+        'R6': 'White',  'S6': 'White',
+        'R5': 'Orange', 'S5': 'Orange',
+        'R4': 'Aqua',   'S4': 'Aqua',
+        'R3': 'Red',    'S3': 'Red',
+        'R2': 'LimeGreen', 'S2': 'LimeGreen',
+        'R1': 'Magenta', 'S1': 'Magenta',
+        'P': 'Yellow'
+    }
 
     # Plot Pivots and Zones
     for _, row in df_pivots.iterrows():
@@ -166,8 +175,8 @@ def live_mobile_view():
         if x_end < chart_start_time:
             continue
 
-        # Plot Fib Lines
         for level, color in fib_colors.items():
+            # Apply MT5 solid lines (Style 0) and width 2 for Pivot
             fig.add_trace(go.Scatter(
                 x=[x_start, x_end],
                 y=[row[level], row[level]],
@@ -175,12 +184,11 @@ def live_mobile_view():
                 name=level,
                 text=["", f" {level}"],
                 textposition="top right",
-                line=dict(color=color, width=1.5 if level == 'P' else 1, dash='solid' if level == 'P' else 'dot'),
+                line=dict(color=color, width=2 if level == 'P' else 1, dash='solid'),
                 showlegend=False,
                 hoverinfo='skip'
             ))
             
-        # Plot Confluence Zones
         if show_zones:
             if row['res_confluence']:
                 res_high = max(row['R1'], row['prev_high']) + row['sweep_buffer']
