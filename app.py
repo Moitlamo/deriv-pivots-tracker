@@ -63,6 +63,8 @@ chart_granularity = chart_timeframes[selected_tf]
 refresh_rate = st.sidebar.slider("Refresh Interval (s)", 2, 30, 20)
 
 st.sidebar.markdown("---")
+# NEW SETTING: Controls how tight the zoom is on the chart
+default_zoom = st.sidebar.slider("Default Zoom Window (Candles)", min_value=30, max_value=500, value=100)
 show_zones = st.sidebar.checkbox("Show Confluence Zones", value=True)
 show_sl = st.sidebar.checkbox("Show Stop Loss Lines", value=True)
 
@@ -93,9 +95,7 @@ def live_mobile_view():
     df_pivots['prev_close'] = df_pivots['close'].shift(1)
     df_pivots['range'] = df_pivots['prev_high'] - df_pivots['prev_low']
 
-    # 7-Layer Fibonacci Pivots (Reverted to original math)
     df_pivots['P'] = (df_pivots['prev_high'] + df_pivots['prev_low'] + df_pivots['prev_close']) / 3
-    
     df_pivots['R1'] = df_pivots['P'] + (0.382 * df_pivots['range'])
     df_pivots['R2'] = df_pivots['P'] + (0.618 * df_pivots['range'])
     df_pivots['R3'] = df_pivots['P'] + (1.000 * df_pivots['range'])
@@ -112,11 +112,9 @@ def live_mobile_view():
     df_pivots['S6'] = df_pivots['P'] - (2.000 * df_pivots['range'])
     df_pivots['S7'] = df_pivots['P'] - (2.618 * df_pivots['range'])
     
-    # Confluence Math
     df_pivots['avg_range'] = df_pivots['range'].rolling(window=14).mean()
     df_pivots['threshold'] = df_pivots['avg_range'] * 0.15 
     
-    # Targeting the R1 and S1 levels
     df_pivots['res_confluence'] = abs(df_pivots['R1'] - df_pivots['prev_high']) <= df_pivots['threshold']
     df_pivots['sup_confluence'] = abs(df_pivots['S1'] - df_pivots['prev_low']) <= df_pivots['threshold']
     
@@ -156,7 +154,6 @@ def live_mobile_view():
         decreasing_line_color='#ef5350'
     ))
 
-    # ATEAMFX Color Map with DarkGray
     fib_colors = {
         'R7': 'Maroon', 'S7': 'Maroon',
         'R6': 'DarkGray', 'S6': 'DarkGray',
@@ -220,6 +217,10 @@ def live_mobile_view():
                     sl_price = sup_low - (row['avg_range'] * 0.10)
                     fig.add_trace(go.Scatter(x=[x_start, x_end], y=[sl_price, sl_price], mode='lines', line=dict(color='crimson', width=1, dash='dash'), hoverinfo='skip', showlegend=False))
 
+    # Calculate Default Zoom Boundaries based on user slider
+    zoom_start = df_intra['datetime'].iloc[-min(default_zoom, len(df_intra))]
+    zoom_end = df_intra['datetime'].iloc[-1] + pd.Timedelta(seconds=chart_granularity * 3) # padding on right
+
     fig.update_layout(
         uirevision="constant",
         title=dict(
@@ -233,7 +234,12 @@ def live_mobile_view():
         template="plotly_dark",
         margin=dict(l=5, r=45, b=10, t=55),
         yaxis=dict(side='right', tickfont=dict(size=10)),
-        xaxis=dict(tickfont=dict(size=10)),
+        
+        # Lock the X-axis strictly to the slider's default range setting
+        xaxis=dict(
+            range=[zoom_start, zoom_end],
+            tickfont=dict(size=10)
+        ),
         dragmode='zoom'
     )
 
