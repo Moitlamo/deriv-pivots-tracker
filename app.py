@@ -5,7 +5,7 @@ import json
 import websocket
 from datetime import datetime
 
-st.set_page_config(page_title="Mobile Fib Pivots", layout="centered")
+st.set_page_config(page_title="Mobile Fib Pivots & Zones", layout="centered")
 
 # --- Deriv WebSocket Fetcher ---
 def fetch_deriv_candles(symbol, granularity, count):
@@ -64,10 +64,16 @@ chart_granularity = chart_timeframes[selected_tf]
 
 refresh_rate = st.sidebar.slider("Refresh Interval (s)", 2, 30, 20)
 
+st.sidebar.markdown("---")
+show_zones = st.sidebar.checkbox("Show Confluence Zones", value=True)
+show_sl = st.sidebar.checkbox("Show Stop Loss Lines", value=True)
+
 # Calculate optimal fetch counts
 candles_per_day = 86400 // chart_granularity
 intraday_count = min(candles_per_day * 3 + 20, 3000)
-pivot_count = max(6, (86400 * 3) // pivot_granularity + 3)
+
+# Fetch extra pivot data to compute the 14-period rolling average required for confluence
+pivot_count = max(30, (86400 * 3) // pivot_granularity + 15)
 
 # --- Live Fragment Container ---
 @st.fragment(run_every=refresh_rate)
@@ -83,7 +89,7 @@ def live_mobile_view():
         st.warning("No data.")
         return
 
-    # 1. Process Pivot Data (Based on selected Pivot Timeframe)
+    # 1. Process Pivot Data & Confluence
     df_pivots = pd.DataFrame(raw_pivots)
     df_pivots['datetime'] = pd.to_datetime(df_pivots['epoch'], unit='s', utc=True)
 
@@ -92,6 +98,7 @@ def live_mobile_view():
     df_pivots['prev_close'] = df_pivots['close'].shift(1)
     df_pivots['range'] = df_pivots['prev_high'] - df_pivots['prev_low']
 
+    # Standard Fib Pivots
     df_pivots['P'] = (df_pivots['prev_high'] + df_pivots['prev_low'] + df_pivots['prev_close']) / 3
     df_pivots['R1'] = df_pivots['P'] + (0.382 * df_pivots['range'])
     df_pivots['R2'] = df_pivots['P'] + (0.618 * df_pivots['range'])
@@ -99,6 +106,20 @@ def live_mobile_view():
     df_pivots['S1'] = df_pivots['P'] - (0.382 * df_pivots['range'])
     df_pivots['S2'] = df_pivots['P'] - (0.618 * df_pivots['range'])
     df_pivots['S3'] = df_pivots['P'] - (1.000 * df_pivots['range'])
+    
+    # --- Confluence Math ---
+    # 14 Period Average Range
+    df_pivots['avg_range'] = df_pivots['range'].rolling(window=14).mean()
+    # 15% Volatility Threshold
+    df_pivots['threshold'] = df_pivots['avg_range'] * 0.15 
+    
+    # Flag Zones
+    df_pivots['res_confluence'] = abs(df_pivots['R1'] - df_pivots['prev_high']) <= df_pivots['threshold']
+    df_pivots['sup_confluence'] = abs(df_pivots['S1'] - df_pivots['prev_low']) <= df_pivots['threshold']
+    
+    # Sweep buffer (Using 5% of average range instead of arbitrary MT5 points)
+    df_pivots['sweep_buffer'] = df_pivots['avg_range'] * 0.05
+
     df_pivots.dropna(inplace=True)
 
     # 2. Process Intraday Chart Data
@@ -108,6 +129,9 @@ def live_mobile_view():
     latest_price = df_intra['close'].iloc[-1]
     current_pivots = df_pivots.iloc[-1]
     chart_start_time = df_intra['datetime'].iloc[0]
+    
+    res_status = "🔴 ACTIVE" if current_pivots['res_confluence'] else "Inactive"
+    sup_status = "🟢 ACTIVE" if current_pivots['sup_confluence'] else "Inactive"
 
     # Metrics Grid
     m_col1, m_col2 = st.columns(2)
@@ -115,8 +139,8 @@ def live_mobile_view():
     m_col2.metric(f"Current Pivot (P)", f"{current_pivots['P']:,.2f}")
     
     m_col3, m_col4 = st.columns(2)
-    m_col3.metric("Fib R1", f"{current_pivots['R1']:,.2f}")
-    m_col4.metric("Fib S1", f"{current_pivots['S1']:,.2f}")
+    m_col3.metric("Sell Zone", res_status)
+    m_col4.metric("Buy Zone", sup_status)
 
     # 3. Build Plotly Chart
     fig = go.Figure()
@@ -134,15 +158,15 @@ def live_mobile_view():
 
     fib_colors = {'R3': '#ff1744', 'R2': '#ff5252', 'R1': '#ff7961', 'P': '#ffd600', 'S1': '#81c784', 'S2': '#4caf50', 'S3': '#2e7d32'}
 
-    # Plot Pivots by adding exact Timeframe duration to X-axis
+    # Plot Pivots and Zones
     for _, row in df_pivots.iterrows():
         x_start = row['datetime']
         x_end = row['datetime'] + pd.Timedelta(seconds=pivot_granularity)
         
-        # Only plot lines that appear within our active intraday window
         if x_end < chart_start_time:
             continue
 
+        # Plot Fib Lines
         for level, color in fib_colors.items():
             fig.add_trace(go.Scatter(
                 x=[x_start, x_end],
@@ -155,6 +179,38 @@ def live_mobile_view():
                 showlegend=False,
                 hoverinfo='skip'
             ))
+            
+        # Plot Confluence Zones
+        if show_zones:
+            if row['res_confluence']:
+                res_high = max(row['R1'], row['prev_high']) + row['sweep_buffer']
+                res_low = min(row['R1'], row['prev_high'])
+                
+                fig.add_shape(
+                    type="rect",
+                    x0=x_start, y0=res_low, x1=x_end, y1=res_high,
+                    fillcolor="rgba(139, 0, 0, 0.2)",
+                    line=dict(width=0),
+                    layer="below"
+                )
+                if show_sl:
+                    sl_price = res_high + (row['avg_range'] * 0.10)
+                    fig.add_trace(go.Scatter(x=[x_start, x_end], y=[sl_price, sl_price], mode='lines', line=dict(color='crimson', width=1, dash='dash'), hoverinfo='skip', showlegend=False))
+
+            if row['sup_confluence']:
+                sup_high = max(row['S1'], row['prev_low'])
+                sup_low = min(row['S1'], row['prev_low']) - row['sweep_buffer']
+                
+                fig.add_shape(
+                    type="rect",
+                    x0=x_start, y0=sup_low, x1=x_end, y1=sup_high,
+                    fillcolor="rgba(0, 100, 0, 0.2)",
+                    line=dict(width=0),
+                    layer="below"
+                )
+                if show_sl:
+                    sl_price = sup_low - (row['avg_range'] * 0.10)
+                    fig.add_trace(go.Scatter(x=[x_start, x_end], y=[sl_price, sl_price], mode='lines', line=dict(color='crimson', width=1, dash='dash'), hoverinfo='skip', showlegend=False))
 
     fig.update_layout(
         uirevision="constant",
@@ -184,5 +240,5 @@ def live_mobile_view():
         }
     )
 
-st.markdown("### ⚡ Live Pivots")
+st.markdown("### ⚡ Live Pivots & Zones")
 live_mobile_view()
