@@ -5,7 +5,6 @@ import json
 import websocket
 from datetime import datetime
 
-# layout="centered" is often better for mobile defaults than "wide"
 st.set_page_config(page_title="Mobile Fib Pivots", layout="centered")
 
 # --- Deriv WebSocket Fetcher ---
@@ -57,10 +56,10 @@ timeframes = {"1 Minute": 60, "5 Minutes": 300, "15 Minutes": 900, "30 Minutes":
 selected_tf = st.sidebar.selectbox("Timeframe", list(timeframes.keys()), index=2)
 granularity = timeframes[selected_tf]
 
-refresh_rate = st.sidebar.slider("Refresh Interval (s)", 2, 30, 5)
+refresh_rate = st.sidebar.slider("Refresh Interval (s)", 2, 30, 20)
 
 candles_per_day = 86400 // granularity
-intraday_count = min(candles_per_day * 3 + 20, 3000) # Capped slightly lower for mobile performance
+intraday_count = min(candles_per_day * 3 + 20, 3000)
 
 # --- Live Fragment Container ---
 @st.fragment(run_every=refresh_rate)
@@ -149,8 +148,9 @@ def live_mobile_view():
                 hoverinfo='skip'
             ))
 
-    # Mobile-Optimized Layout Adjustments
+    # Mobile-Optimized Layout & Persistent Zoom Adjustments
     fig.update_layout(
+        uirevision="constant",
         title=dict(
             text=f"<b>{selected_asset_name}</b><br><span style='font-size:12px;'>{selected_tf} - Fib Pivots</span>",
             font=dict(size=16)
@@ -158,15 +158,24 @@ def live_mobile_view():
         yaxis_title="",
         xaxis_title="",
         xaxis_rangeslider_visible=False,
-        height=450, # Shorter height fits perfectly on most modern smartphones
+        height=500,
         template="plotly_dark",
-        margin=dict(l=5, r=45, b=10, t=55), # Tight margins, extra space on right for y-axis
-        yaxis=dict(side='right', tickfont=dict(size=10)), # Y-axis on the right side
+        margin=dict(l=5, r=45, b=10, t=55),
+        yaxis=dict(side='right', tickfont=dict(size=10)),
         xaxis=dict(tickfont=dict(size=10)),
-        dragmode='pan' # Default to panning instead of zooming on mobile
+        dragmode='zoom'
     )
 
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}) # Hides the plotly toolbar for a cleaner mobile look
+    st.plotly_chart(
+        fig, 
+        use_container_width=True, 
+        config={
+            'scrollZoom': True,
+            'displayModeBar': True,
+            'displaylogo': False,
+            'modeBarButtonsToRemove': ['lasso2d', 'select2d']
+        }
+    )
 
 # Main Render
 st.markdown("### ⚡ Live Pivots")
