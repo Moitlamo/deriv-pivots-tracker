@@ -93,31 +93,32 @@ def live_mobile_view():
     df_pivots['prev_close'] = df_pivots['close'].shift(1)
     df_pivots['range'] = df_pivots['prev_high'] - df_pivots['prev_low']
 
-    # 7-Layer Fibonacci Pivots
+    # 7-Layer Fibonacci Pivots (Synchronized to MT5 Ratios)
     df_pivots['P'] = (df_pivots['prev_high'] + df_pivots['prev_low'] + df_pivots['prev_close']) / 3
     
-    df_pivots['R1'] = df_pivots['P'] + (0.382 * df_pivots['range'])
-    df_pivots['R2'] = df_pivots['P'] + (0.618 * df_pivots['range'])
-    df_pivots['R3'] = df_pivots['P'] + (1.000 * df_pivots['range'])
-    df_pivots['R4'] = df_pivots['P'] + (1.382 * df_pivots['range'])
-    df_pivots['R5'] = df_pivots['P'] + (1.618 * df_pivots['range'])
-    df_pivots['R6'] = df_pivots['P'] + (2.000 * df_pivots['range'])
-    df_pivots['R7'] = df_pivots['P'] + (2.618 * df_pivots['range'])
+    df_pivots['R1'] = df_pivots['P'] + (0.236 * df_pivots['range'])
+    df_pivots['R2'] = df_pivots['P'] + (0.382 * df_pivots['range'])
+    df_pivots['R3'] = df_pivots['P'] + (0.500 * df_pivots['range'])
+    df_pivots['R4'] = df_pivots['P'] + (0.618 * df_pivots['range'])
+    df_pivots['R5'] = df_pivots['P'] + (0.786 * df_pivots['range'])
+    df_pivots['R6'] = df_pivots['P'] + (1.000 * df_pivots['range'])
+    df_pivots['R7'] = df_pivots['P'] + (1.618 * df_pivots['range'])
     
-    df_pivots['S1'] = df_pivots['P'] - (0.382 * df_pivots['range'])
-    df_pivots['S2'] = df_pivots['P'] - (0.618 * df_pivots['range'])
-    df_pivots['S3'] = df_pivots['P'] - (1.000 * df_pivots['range'])
-    df_pivots['S4'] = df_pivots['P'] - (1.382 * df_pivots['range'])
-    df_pivots['S5'] = df_pivots['P'] - (1.618 * df_pivots['range'])
-    df_pivots['S6'] = df_pivots['P'] - (2.000 * df_pivots['range'])
-    df_pivots['S7'] = df_pivots['P'] - (2.618 * df_pivots['range'])
+    df_pivots['S1'] = df_pivots['P'] - (0.236 * df_pivots['range'])
+    df_pivots['S2'] = df_pivots['P'] - (0.382 * df_pivots['range'])
+    df_pivots['S3'] = df_pivots['P'] - (0.500 * df_pivots['range'])
+    df_pivots['S4'] = df_pivots['P'] - (0.618 * df_pivots['range'])
+    df_pivots['S5'] = df_pivots['P'] - (0.786 * df_pivots['range'])
+    df_pivots['S6'] = df_pivots['P'] - (1.000 * df_pivots['range'])
+    df_pivots['S7'] = df_pivots['P'] - (1.618 * df_pivots['range'])
     
     # Confluence Math
     df_pivots['avg_range'] = df_pivots['range'].rolling(window=14).mean()
     df_pivots['threshold'] = df_pivots['avg_range'] * 0.15 
     
-    df_pivots['res_confluence'] = abs(df_pivots['R1'] - df_pivots['prev_high']) <= df_pivots['threshold']
-    df_pivots['sup_confluence'] = abs(df_pivots['S1'] - df_pivots['prev_low']) <= df_pivots['threshold']
+    # Targeting the 0.382 levels (now R2 and S2) for the MT5 Trap Zones
+    df_pivots['res_confluence'] = abs(df_pivots['R2'] - df_pivots['prev_high']) <= df_pivots['threshold']
+    df_pivots['sup_confluence'] = abs(df_pivots['S2'] - df_pivots['prev_low']) <= df_pivots['threshold']
     
     df_pivots['sweep_buffer'] = df_pivots['avg_range'] * 0.05
     df_pivots.dropna(inplace=True)
@@ -155,10 +156,10 @@ def live_mobile_view():
         decreasing_line_color='#ef5350'
     ))
 
-    # Updated MT5 ATEAMFX Color Map
+    # ATEAMFX Color Map
     fib_colors = {
         'R7': 'Maroon', 'S7': 'Maroon',
-        'R6': 'White',  'S6': 'White',
+        'R6': 'DarkGray', 'S6': 'DarkGray',
         'R5': 'Orange', 'S5': 'Orange',
         'R4': 'Aqua',   'S4': 'Aqua',
         'R3': 'Red',    'S3': 'Red',
@@ -176,7 +177,6 @@ def live_mobile_view():
             continue
 
         for level, color in fib_colors.items():
-            # Apply MT5 solid lines (Style 0) and width 2 for Pivot
             fig.add_trace(go.Scatter(
                 x=[x_start, x_end],
                 y=[row[level], row[level]],
@@ -191,8 +191,8 @@ def live_mobile_view():
             
         if show_zones:
             if row['res_confluence']:
-                res_high = max(row['R1'], row['prev_high']) + row['sweep_buffer']
-                res_low = min(row['R1'], row['prev_high'])
+                res_high = max(row['R2'], row['prev_high']) + row['sweep_buffer']
+                res_low = min(row['R2'], row['prev_high'])
                 
                 fig.add_shape(
                     type="rect",
@@ -206,8 +206,8 @@ def live_mobile_view():
                     fig.add_trace(go.Scatter(x=[x_start, x_end], y=[sl_price, sl_price], mode='lines', line=dict(color='crimson', width=1, dash='dash'), hoverinfo='skip', showlegend=False))
 
             if row['sup_confluence']:
-                sup_high = max(row['S1'], row['prev_low'])
-                sup_low = min(row['S1'], row['prev_low']) - row['sweep_buffer']
+                sup_high = max(row['S2'], row['prev_low'])
+                sup_low = min(row['S2'], row['prev_low']) - row['sweep_buffer']
                 
                 fig.add_shape(
                     type="rect",
