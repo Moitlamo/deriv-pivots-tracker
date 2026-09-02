@@ -34,7 +34,7 @@ def fetch_deriv_candles(symbol, granularity, count):
     except Exception as e:
         return None, str(e)
 
-# --- Settings (Hidden in Sidebar on Mobile) ---
+# --- Settings ---
 st.sidebar.header("⚙️ Settings")
 
 assets = {
@@ -52,66 +52,73 @@ assets = {
 selected_asset_name = st.sidebar.selectbox("Volatility Index", list(assets.keys()), index=4)
 symbol = assets[selected_asset_name]
 
-timeframes = {"1 Minute": 60, "5 Minutes": 300, "15 Minutes": 900, "30 Minutes": 1800, "1 Hour": 3600}
-selected_tf = st.sidebar.selectbox("Timeframe", list(timeframes.keys()), index=2)
-granularity = timeframes[selected_tf]
+# Higher Timeframe for Pivot Calculations
+pivot_timeframes = {"1 Hour": 3600, "4 Hours": 14400, "8 Hours": 28800, "1 Day": 86400}
+selected_pivot_tf = st.sidebar.selectbox("Pivot Timeframe", list(pivot_timeframes.keys()), index=3)
+pivot_granularity = pivot_timeframes[selected_pivot_tf]
+
+# Lower Timeframe for Chart Candles
+chart_timeframes = {"1 Minute": 60, "5 Minutes": 300, "15 Minutes": 900, "30 Minutes": 1800, "1 Hour": 3600}
+selected_tf = st.sidebar.selectbox("Chart Timeframe", list(chart_timeframes.keys()), index=2)
+chart_granularity = chart_timeframes[selected_tf]
 
 refresh_rate = st.sidebar.slider("Refresh Interval (s)", 2, 30, 20)
 
-candles_per_day = 86400 // granularity
+# Calculate optimal fetch counts
+candles_per_day = 86400 // chart_granularity
 intraday_count = min(candles_per_day * 3 + 20, 3000)
+pivot_count = max(6, (86400 * 3) // pivot_granularity + 3)
 
 # --- Live Fragment Container ---
 @st.fragment(run_every=refresh_rate)
 def live_mobile_view():
-    raw_daily, err_daily = fetch_deriv_candles(symbol, 86400, 6)
-    raw_intra, err_intra = fetch_deriv_candles(symbol, granularity, intraday_count)
+    raw_pivots, err_pivots = fetch_deriv_candles(symbol, pivot_granularity, pivot_count)
+    raw_intra, err_intra = fetch_deriv_candles(symbol, chart_granularity, intraday_count)
 
-    if err_daily or err_intra:
-        st.error(f"Error: {err_daily or err_intra}")
+    if err_pivots or err_intra:
+        st.error(f"Error: {err_pivots or err_intra}")
         return
 
-    if not raw_daily or not raw_intra:
+    if not raw_pivots or not raw_intra:
         st.warning("No data.")
         return
 
-    # 1. Process Daily Data & Compute Fibonacci Pivots
-    df_daily = pd.DataFrame(raw_daily)
-    df_daily['datetime'] = pd.to_datetime(df_daily['epoch'], unit='s', utc=True)
-    df_daily['date'] = df_daily['datetime'].dt.date
+    # 1. Process Pivot Data (Based on selected Pivot Timeframe)
+    df_pivots = pd.DataFrame(raw_pivots)
+    df_pivots['datetime'] = pd.to_datetime(df_pivots['epoch'], unit='s', utc=True)
 
-    df_daily['prev_high'] = df_daily['high'].shift(1)
-    df_daily['prev_low'] = df_daily['low'].shift(1)
-    df_daily['prev_close'] = df_daily['close'].shift(1)
-    df_daily['range'] = df_daily['prev_high'] - df_daily['prev_low']
+    df_pivots['prev_high'] = df_pivots['high'].shift(1)
+    df_pivots['prev_low'] = df_pivots['low'].shift(1)
+    df_pivots['prev_close'] = df_pivots['close'].shift(1)
+    df_pivots['range'] = df_pivots['prev_high'] - df_pivots['prev_low']
 
-    df_daily['P'] = (df_daily['prev_high'] + df_daily['prev_low'] + df_daily['prev_close']) / 3
-    df_daily['R1'] = df_daily['P'] + (0.382 * df_daily['range'])
-    df_daily['R2'] = df_daily['P'] + (0.618 * df_daily['range'])
-    df_daily['R3'] = df_daily['P'] + (1.000 * df_daily['range'])
-    df_daily['S1'] = df_daily['P'] - (0.382 * df_daily['range'])
-    df_daily['S2'] = df_daily['P'] - (0.618 * df_daily['range'])
-    df_daily['S3'] = df_daily['P'] - (1.000 * df_daily['range'])
-    df_daily.dropna(inplace=True)
+    df_pivots['P'] = (df_pivots['prev_high'] + df_pivots['prev_low'] + df_pivots['prev_close']) / 3
+    df_pivots['R1'] = df_pivots['P'] + (0.382 * df_pivots['range'])
+    df_pivots['R2'] = df_pivots['P'] + (0.618 * df_pivots['range'])
+    df_pivots['R3'] = df_pivots['P'] + (1.000 * df_pivots['range'])
+    df_pivots['S1'] = df_pivots['P'] - (0.382 * df_pivots['range'])
+    df_pivots['S2'] = df_pivots['P'] - (0.618 * df_pivots['range'])
+    df_pivots['S3'] = df_pivots['P'] - (1.000 * df_pivots['range'])
+    df_pivots.dropna(inplace=True)
 
-    # 2. Process Intraday Data
+    # 2. Process Intraday Chart Data
     df_intra = pd.DataFrame(raw_intra)
     df_intra['datetime'] = pd.to_datetime(df_intra['epoch'], unit='s', utc=True)
-    df_intra['date'] = df_intra['datetime'].dt.date
 
     latest_price = df_intra['close'].iloc[-1]
-    today_pivots = df_daily.iloc[-1]
+    current_pivots = df_pivots.iloc[-1]
+    chart_start_time = df_intra['datetime'].iloc[0]
 
-    # Mobile-Optimized Metrics (2x2 Grid)
+    # Metrics Grid
     m_col1, m_col2 = st.columns(2)
     m_col1.metric("Live Price", f"{latest_price:,.2f}")
-    m_col2.metric("Pivot (P)", f"{today_pivots['P']:,.2f}")
+    m_col2.metric(f"Current Pivot (P)", f"{current_pivots['P']:,.2f}")
     
     m_col3, m_col4 = st.columns(2)
-    m_col3.metric("Fib R1", f"{today_pivots['R1']:,.2f}")
-    m_col4.metric("Fib S1", f"{today_pivots['S1']:,.2f}")
+    m_col3.metric("Fib R1", f"{current_pivots['R1']:,.2f}")
+    m_col4.metric("Fib S1", f"{current_pivots['S1']:,.2f}")
 
-    # 3. Create Candlestick Plot
+    # 3. Build Plotly Chart
     fig = go.Figure()
 
     fig.add_trace(go.Candlestick(
@@ -127,13 +134,14 @@ def live_mobile_view():
 
     fib_colors = {'R3': '#ff1744', 'R2': '#ff5252', 'R1': '#ff7961', 'P': '#ffd600', 'S1': '#81c784', 'S2': '#4caf50', 'S3': '#2e7d32'}
 
-    for _, row in df_daily.iterrows():
-        df_day = df_intra[df_intra['date'] == row['date']]
-        if df_day.empty:
+    # Plot Pivots by adding exact Timeframe duration to X-axis
+    for _, row in df_pivots.iterrows():
+        x_start = row['datetime']
+        x_end = row['datetime'] + pd.Timedelta(seconds=pivot_granularity)
+        
+        # Only plot lines that appear within our active intraday window
+        if x_end < chart_start_time:
             continue
-
-        x_start = df_day['datetime'].iloc[0]
-        x_end = df_day['datetime'].iloc[-1]
 
         for level, color in fib_colors.items():
             fig.add_trace(go.Scatter(
@@ -148,11 +156,10 @@ def live_mobile_view():
                 hoverinfo='skip'
             ))
 
-    # Mobile-Optimized Layout & Persistent Zoom Adjustments
     fig.update_layout(
         uirevision="constant",
         title=dict(
-            text=f"<b>{selected_asset_name}</b><br><span style='font-size:12px;'>{selected_tf} - Fib Pivots</span>",
+            text=f"<b>{selected_asset_name}</b><br><span style='font-size:12px;'>Pivots: {selected_pivot_tf} | Chart: {selected_tf}</span>",
             font=dict(size=16)
         ),
         yaxis_title="",
@@ -177,6 +184,5 @@ def live_mobile_view():
         }
     )
 
-# Main Render
 st.markdown("### ⚡ Live Pivots")
 live_mobile_view()
