@@ -8,10 +8,25 @@ from datetime import datetime
 # Maximize screen width and mobile layout
 st.set_page_config(page_title="Mobile Fib Trading", layout="wide", initial_sidebar_state="collapsed")
 
-# CSS Hack to remove Streamlit's huge default top padding for a true full-screen feel
+# CSS Hack for True Mobile Responsiveness (Portrait vs Landscape)
 st.markdown("""
     <style>
-        .block-container { padding-top: 1rem; padding-bottom: 0rem; padding-left: 0.5rem; padding-right: 0.5rem; }
+        /* Remove default padding */
+        .block-container { padding-top: 1rem; padding-bottom: 0rem; padding-left: 0.5rem; padding-right: 0.5rem; max-width: 100% !important;}
+        
+        /* Hide Streamlit top header menu */
+        header {visibility: hidden;}
+        
+        /* Force the chart container to dynamically size to 75% of the screen height */
+        [data-testid="stPlotlyChart"] {
+            height: 75vh !important; 
+            min-height: 300px !important; 
+            width: 100% !important;
+        }
+        [data-testid="stPlotlyChart"] > div, [data-testid="stPlotlyChart"] iframe {
+            height: 100% !important;
+            width: 100% !important;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -125,7 +140,7 @@ def live_mobile_view():
     sup_status = "🟢 ACTIVE" if current_pivots['sup_confluence'] else "Inactive"
 
     # --- COLLAPSIBLE TRADING PANEL ---
-    with st.expander(f"🚀 Trading Panel & Metrics | Price: {latest_price:,.2f}", expanded=False):
+    with st.expander(f"🚀 Trading Panel | Price: {latest_price:,.2f}", expanded=False):
         m_col1, m_col2 = st.columns(2)
         m_col1.metric("Sell Zone (R1)", res_status)
         m_col2.metric("Buy Zone (S1)", sup_status)
@@ -202,19 +217,18 @@ def live_mobile_view():
 
     fig.update_layout(
         uirevision=view_state_id,
+        autosize=True, # Allows the CSS '75vh' to dictate the size
         title=dict(text=f"<b>{selected_asset_name}</b> ({selected_tf})", font=dict(size=14)),
         yaxis_title="", xaxis_title="", xaxis_rangeslider_visible=False,
-        height=700, 
         template="plotly_dark",
-        margin=dict(l=0, r=40, b=0, t=50), # Increased top margin so the Modebar doesn't overlap
+        margin=dict(l=0, r=40, b=0, t=50),
         xaxis=dict(range=[zoom_start, zoom_end], tickfont=dict(size=10)),
         yaxis=dict(side='right', tickfont=dict(size=10), range=[y_zoom_min, y_zoom_max], fixedrange=False),
         dragmode='zoom',
-        modebar=dict(orientation='h') # Ensures horizontal layout
+        modebar=dict(orientation='h') 
     )
 
-    # Restored the Modebar with a clean configuration
-    st.plotly_chart(fig, use_container_width=True, config={
+    st.plotly_chart(fig, use_container_width=True, theme=None, config={
         'scrollZoom': True, 
         'displayModeBar': True, 
         'displaylogo': False,
