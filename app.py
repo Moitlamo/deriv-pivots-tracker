@@ -134,7 +134,6 @@ def live_mobile_view():
         t_col1, t_col2, t_col3 = st.columns([1, 1, 1])
         stake_amount = t_col1.number_input("Stake (USD)", min_value=0.35, value=1.00, step=0.10)
         
-        # Placeholder buttons for the upcoming API Execution logic
         if t_col2.button("🔴 SELL Limit", use_container_width=True):
             if api_token: st.success("Trading logic will execute here!")
             else: st.error("Enter API Token in Sidebar.")
@@ -203,17 +202,23 @@ def live_mobile_view():
 
     fig.update_layout(
         uirevision=view_state_id,
-        # Minimalist title to save space
         title=dict(text=f"<b>{selected_asset_name}</b> ({selected_tf})", font=dict(size=14)),
         yaxis_title="", xaxis_title="", xaxis_rangeslider_visible=False,
-        height=700, # <--- INCREASED CHART HEIGHT FOR FULL SCREEN FEEL
+        height=700, 
         template="plotly_dark",
-        margin=dict(l=0, r=40, b=0, t=30), # <--- TIGHTENED MARGINS
+        margin=dict(l=0, r=40, b=0, t=50), # Increased top margin so the Modebar doesn't overlap
         xaxis=dict(range=[zoom_start, zoom_end], tickfont=dict(size=10)),
         yaxis=dict(side='right', tickfont=dict(size=10), range=[y_zoom_min, y_zoom_max], fixedrange=False),
-        dragmode='zoom'
+        dragmode='zoom',
+        modebar=dict(orientation='h') # Ensures horizontal layout
     )
 
-    st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': False}) # Hid modebar to save space
+    # Restored the Modebar with a clean configuration
+    st.plotly_chart(fig, use_container_width=True, config={
+        'scrollZoom': True, 
+        'displayModeBar': True, 
+        'displaylogo': False,
+        'modeBarButtonsToRemove': ['lasso2d', 'select2d']
+    }) 
 
 live_mobile_view()
