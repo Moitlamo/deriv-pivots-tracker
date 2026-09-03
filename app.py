@@ -8,14 +8,16 @@ from datetime import datetime
 # Maximize screen width and mobile layout
 st.set_page_config(page_title="Mobile Fib Trading", layout="wide", initial_sidebar_state="collapsed")
 
-# CSS Hack for True Mobile Responsiveness (Portrait vs Landscape)
+# CSS Hack for True Mobile Responsiveness and Sidebar Toggle preservation
 st.markdown("""
     <style>
-        /* Remove default padding */
-        .block-container { padding-top: 1rem; padding-bottom: 0rem; padding-left: 0.5rem; padding-right: 0.5rem; max-width: 100% !important;}
+        /* Add slight top padding so the sidebar toggle doesn't overlap the text */
+        .block-container { padding-top: 2.5rem; padding-bottom: 0rem; padding-left: 0.5rem; padding-right: 0.5rem; max-width: 100% !important;}
         
-        /* Hide Streamlit top header menu */
-        header {visibility: hidden;}
+        /* Hide Streamlit top right menu (Fork/Deploy) but KEEP the sidebar toggle */
+        #MainMenu {visibility: hidden;}
+        .stAppDeployButton {display: none;}
+        header {background: transparent !important;}
         
         /* Force the chart container to dynamically size to 75% of the screen height */
         [data-testid="stPlotlyChart"] {
@@ -217,7 +219,7 @@ def live_mobile_view():
 
     fig.update_layout(
         uirevision=view_state_id,
-        autosize=True, # Allows the CSS '75vh' to dictate the size
+        autosize=True, 
         title=dict(text=f"<b>{selected_asset_name}</b> ({selected_tf})", font=dict(size=14)),
         yaxis_title="", xaxis_title="", xaxis_rangeslider_visible=False,
         template="plotly_dark",
